@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Thread pool vs Virtual threads</title>
+    <style>
+        :root {
+            --bg: #f4f6fa;
+            --card: #ffffff;
+            --text: #1e2433;
+            --muted: #5f6b7d;
+            --border: #e3e7ee;
+            --blue: #2563eb;
+            --red: #c0504d;
+            --red-box: #dc6b6b;
+            --red-soft: #fbe9e8;
+            --green: #2f8a57;
+            --green-box: #3ea56a;
+            --green-soft: #e6f4ea;
+            --done-box: #b9e0c6;
+            --idle-box: #dfe3ea;
+            --badge-bg: #fff4cc;
+            --badge-border: #f3d778;
+            --badge-text: #7a5a00;
+            --code: #2563eb;
+            --shadow: 0 1px 3px rgba(20, 30, 50, .08), 0 4px 16px rgba(20, 30, 50, .05);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #10141c;
+                --card: #181e29;
+                --text: #e6e9ef;
+                --muted: #9aa5b8;
+                --border: #2a3242;
+                --blue: #6b9bff;
+                --red: #f08a85;
+                --red-box: #d86a66;
+                --red-soft: #3a2224;
+                --green: #6fd19a;
+                --green-box: #3fae70;
+                --done-box: #2c5a40;
+                --green-soft: #1d3327;
+                --idle-box: #2a3242;
+                --badge-bg: #3a3214;
+                --badge-border: #6b5a1d;
+                --badge-text: #f3d778;
+                --code: #8fb3ff;
+                --shadow: none;
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.4;
+        }
+
+        main {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 32px 16px 24px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(28px, 6vw, 40px);
+            font-weight: 800;
+            letter-spacing: -.5px;
+        }
+
+        h1 span { color: var(--blue); }
+
+        .subtitle {
+            margin: 6px 0 10px;
+            color: var(--muted);
+            font-size: 16px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 8px;
+            background: var(--badge-bg);
+            border: 1px solid var(--badge-border);
+            color: var(--badge-text);
+            font-size: 13px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: end;
+            margin: 20px 0;
+        }
+
+        .controls label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .controls input {
+            width: 120px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--card);
+            color: var(--text);
+            font: inherit;
+        }
+
+        .controls button {
+            padding: 9px 20px;
+            border: 0;
+            border-radius: 8px;
+            background: var(--blue);
+            color: #fff;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .controls button:disabled { opacity: .55; cursor: progress; }
+
+        .controls .error { color: var(--red); font-size: 14px; }
+
+        .cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            border-radius: 14px;
+            border: 1px solid var(--border);
+            border-top: 4px solid var(--accent);
+            background: var(--card);
+            box-shadow: var(--shadow);
+        }
+
+        .card.pool { --accent: var(--red); --soft: var(--red-soft); }
+        .card.virtual { --accent: var(--green); --soft: var(--green-soft); }
+
+        .card h2 {
+            margin: 0 0 14px;
+            color: var(--accent);
+            font-size: 22px;
+        }
+
+        .card ul {
+            margin: 0 0 16px;
+            padding: 0;
+            list-style: none;
+        }
+
+        .card li {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+
+        .card li .icon { flex: none; width: 26px; text-align: center; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(20, 1fr);
+            gap: 3px;
+        }
+
+        .box {
+            aspect-ratio: 1;
+            border-radius: 2px;
+            background: var(--idle-box);
+            transition: background-color .15s;
+        }
+
+        .box.waiting { background: var(--red-box); }
+        .box.running { background: var(--green-box); }
+        .box.done { background: var(--done-box); }
+
+        .legend {
+            margin: 10px 0 4px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .legend i {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            margin-right: 3px;
+            border-radius: 2px;
+        }
+
+        .counts {
+            margin: 4px 0 16px;
+            color: var(--muted);
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .pill {
+            margin-top: auto;
+            padding: 10px;
+            border-radius: 10px;
+            background: var(--soft);
+            color: var(--accent);
+            text-align: center;
+            font-size: 17px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .verdict {
+            min-height: 24px;
+            margin: 16px 0 0;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .tips {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-top: 20px;
+        }
+
+        .tip {
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--blue);
+            background: var(--card);
+            box-shadow: var(--shadow);
+            font-size: 14px;
+        }
+
+        .tip h3 {
+            margin: 0 0 4px;
+            color: var(--blue);
+            font-size: 16px;
+        }
+
+        .tip p { margin: 0; }
+
+        code {
+            color: var(--code);
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: .92em;
+            overflow-wrap: anywhere;
+        }
+
+        .property {
+            margin: 24px 0 8px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .server {
+            margin: 0 0 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+            overflow-wrap: anywhere;
+        }
+
+        footer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 8px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        @media (max-width: 720px) {
+            .cards, .tips { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Thread pool vs <span>Virtual threads</span></h1>
+    <p class="subtitle">
+        Spring Boot API · each request waits ~<span data-bind="latency">1 s</span> on the database ·
+        <span data-bind="users">1,000</span> users at once
+    </p>
+    <span class="badge">⚡ Live run on this Spring Boot app, not a static picture</span>
+
+    <form class="controls" id="controls">
+        <label>Users
+            <input id="requests" type="number" min="1" max="10000" value="1000" required>
+        </label>
+        <label>Pool threads
+            <input id="poolSize" type="number" min="1" max="1000" value="200" required>
+        </label>
+        <button id="run" type="submit">▶ Run both</button>
+        <span class="error" id="error" role="alert"></span>
+    </form>
+
+    <section class="cards">
+        <article class="card pool">
+            <h2>Thread pool (old way)</h2>
+            <ul>
+                <li><span class="icon">🧵</span><span><span data-bind="pool">200</span> OS threads (~1 MB stack each)</span></li>
+                <li><span class="icon">📥</span><span><span data-bind="users">1,000</span> requests arrive</span></li>
+                <li><span class="icon">⏳</span><strong><span data-bind="queued">800</span> wait in a queue</strong></li>
+                <li><span class="icon">😴</span><span>Threads sit idle while the DB works</span></li>
+            </ul>
+            <div class="grid" id="pool-grid"></div>
+            <p class="legend">
+                <i style="background:var(--green-box)"></i>running ·
+                <i style="background:var(--red-box)"></i>waiting ·
+                <i style="background:var(--done-box)"></i>done
+                (1 box = <span data-bind="perBox">10</span> requests)
+            </p>
+            <p class="counts" id="pool-counts">Press “Run both” to start</p>
+            <div class="pill" id="pool-pill">Last user waits …</div>
+        </article>
+
+        <article class="card virtual">
+            <h2>Virtual threads (Java 21)</h2>
+            <ul>
+                <li><span class="icon">🪶</span><span><span data-bind="users">1,000</span> virtual threads, all start now</span></li>
+                <li><span class="icon">⚙️</span><span>A few carrier (OS) threads do the work</span></li>
+                <li><span class="icon">⬇️</span><span>DB wait → virtual thread <strong>unmounts</strong>, carrier is free</span></li>
+                <li><span class="icon">⬆️</span><span>Data back → it <strong>remounts</strong> and continues</span></li>
+            </ul>
+            <div class="grid" id="virtual-grid"></div>
+            <p class="legend">
+                <i style="background:var(--green-box)"></i>running ·
+                <i style="background:var(--red-box)"></i>waiting ·
+                <i style="background:var(--done-box)"></i>done
+            </p>
+            <p class="counts" id="virtual-counts">Press “Run both” to start</p>
+            <div class="pill" id="virtual-pill">All done in …</div>
+        </article>
+    </section>
+
+    <p class="verdict" id="verdict"></p>
+
+    <section class="tips">
+        <div class="tip">
+            <h3>1. More users, not speed</h3>
+            <p>More requests at once. One request is not faster.</p>
+        </div>
+        <div class="tip">
+            <h3>2. Don't pool them</h3>
+            <p>One per task: <code>Executors.newVirtualThreadPerTaskExecutor()</code></p>
+        </div>
+        <div class="tip">
+            <h3>3. Watch synchronized</h3>
+            <p>Avoid long waits inside it. Use <code>ReentrantLock</code>.</p>
+        </div>
+    </section>
+
+    <p class="property">Spring Boot 3.2+: <code>spring.threads.virtual.enabled=true</code></p>
+    <p class="server" id="server"></p>
+
+    <footer>
+        <span><strong>spring-boot-thread-pool-vs-virtual-thread</strong> · Spring Boot 4 · Java 25</span>
+        <span>Sources: Oracle Java 21 docs · JEP 444</span>
+    </footer>
+</main>
+
+<script>
+    const MAX_BOXES = 100;
+    const numberFormat = new Intl.NumberFormat('en-US');
+
+    const form = document.getElementById('controls');
+    const runButton = document.getElementById('run');
+    const errorText = document.getElementById('error');
+    const requestsInput = document.getElementById('requests');
+    const poolSizeInput = document.getElementById('poolSize');
+    const verdict = document.getElementById('verdict');
+
+    const panels = {
+        threadPool: {
+            grid: document.getElementById('pool-grid'),
+            counts: document.getElementById('pool-counts'),
+            pill: document.getElementById('pool-pill'),
+            finalText: s => `Last user waits ~${seconds(s)}`
+        },
+        virtualThreads: {
+            grid: document.getElementById('virtual-grid'),
+            counts: document.getElementById('virtual-counts'),
+            pill: document.getElementById('virtual-pill'),
+            finalText: s => `All done in ~${seconds(s)}`
+        }
+    };
+
+    let source = null;
+
+    function seconds(millis) {
+        return `${(millis / 1000).toFixed(1)} s`;
+    }
+
+    function bind(name, value) {
+        document.querySelectorAll(`[data-bind="${name}"]`).forEach(el => el.textContent = value);
+    }
+
+    function boxCount(requests) {
+        return Math.min(MAX_BOXES, requests);
+    }
+
+    function buildGrids(requests) {
+        for (const panel of Object.values(panels)) {
+            panel.grid.replaceChildren(...Array.from({length: boxCount(requests)}, () => {
+                const box = document.createElement('div');
+                box.className = 'box';
+                return box;
+            }));
+        }
+    }
+
+    function describe(requests, poolSize) {
+        bind('users', numberFormat.format(requests));
+        bind('pool', numberFormat.format(poolSize));
+        bind('queued', numberFormat.format(Math.max(0, requests - poolSize)));
+        const perBox = requests / boxCount(requests);
+        bind('perBox', Number.isInteger(perBox) ? perBox : perBox.toFixed(1));
+    }
+
+    function render(key, snapshot) {
+        const panel = panels[key];
+        const boxes = panel.grid.children;
+        const perBox = snapshot.requests / boxes.length;
+        const doneBoxes = Math.floor(snapshot.done / perBox);
+        const startedBoxes = Math.round((snapshot.done + snapshot.running) / perBox);
+        for (let i = 0; i < boxes.length; i++) {
+            const state = i < doneBoxes ? 'done' : i < startedBoxes ? 'running' : 'waiting';
+            boxes[i].className = `box ${state}`;
+        }
+        panel.counts.textContent =
+            `${numberFormat.format(snapshot.waiting)} waiting · ` +
+            `${numberFormat.format(snapshot.running)} running · ` +
+            `${numberFormat.format(snapshot.done)} done`;
+        panel.pill.textContent = snapshot.finished
+            ? panel.finalText(snapshot.elapsedMillis)
+            : `⏱ ${seconds(snapshot.elapsedMillis)}`;
+    }
+
+    function finish(result) {
+        panels.threadPool.pill.textContent = panels.threadPool.finalText(result.threadPool.totalMillis);
+        panels.virtualThreads.pill.textContent = panels.virtualThreads.finalText(result.virtualThreads.totalMillis);
+        verdict.textContent = `Same server, same ${seconds(result.dbLatencyMillis)} DB wait: ` +
+            `virtual threads served all ${numberFormat.format(result.virtualThreads.requests)} users ` +
+            `${result.speedup}× sooner (peak ${numberFormat.format(result.virtualThreads.peakConcurrent)} ` +
+            `vs ${numberFormat.format(result.threadPool.peakConcurrent)} DB calls at once).`;
+    }
+
+    function stop() {
+        if (source) {
+            source.close();
+            source = null;
+        }
+        runButton.disabled = false;
+    }
+
+    function start() {
+        const requests = Number(requestsInput.value);
+        const poolSize = Number(poolSizeInput.value);
+        if (!form.reportValidity()) {
+            return;
+        }
+        stop();
+        errorText.textContent = '';
+        verdict.textContent = '';
+        runButton.disabled = true;
+        describe(requests, poolSize);
+        buildGrids(requests);
+
+        // EventSource reconnects on its own when the stream ends, so close it once the result arrives
+        source = new EventSource(`/api/compare/live?requests=${requests}&poolSize=${poolSize}`);
+        source.addEventListener('progress', event => {
+            const snapshot = JSON.parse(event.data);
+            render('threadPool', snapshot.threadPool);
+            render('virtualThreads', snapshot.virtualThreads);
+        });
+        source.addEventListener('result', event => {
+            finish(JSON.parse(event.data));
+            stop();
+        });
+        source.onerror = () => {
+            if (source) {
+                errorText.textContent = 'Connection lost before the run finished.';
+                stop();
+            }
+        };
+    }
+
+    async function loadServerInfo() {
+        try {
+            const stats = await (await fetch('/api/stats')).json();
+            bind('latency', seconds(stats.dbLatencyMillis));
+            document.getElementById('server').textContent =
+                `This server: virtual threads ${stats.virtualThreadsEnabled ? 'ON' : 'OFF'} · ` +
+                `this request was served by ${stats.servedBy}`;
+        } catch (e) {
+            document.getElementById('server').textContent = 'Could not reach /api/stats';
+        }
+    }
+
+    form.addEventListener('submit', event => {
+        event.preventDefault();
+        start();
+    });
+
+    describe(Number(requestsInput.value), Number(poolSizeInput.value));
+    buildGrids(Number(requestsInput.value));
+    loadServerInfo();
+    if (new URLSearchParams(location.search).has('run')) {
+        start();
+    }
+</script>
+</body>
+</html>
