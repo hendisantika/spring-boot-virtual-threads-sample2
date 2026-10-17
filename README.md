@@ -17,6 +17,28 @@ A runnable version of this diagram: a Spring Boot API where every request waits 
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=platform     # thread pool (old way): 200 Tomcat OS threads
 ```
 
+## Run with Docker
+
+```bash
+docker compose up -d --build
+```
+
+| Service | URL | Mode |
+|---|---|---|
+| `virtual` | http://localhost:8080 | virtual threads (`spring.threads.virtual.enabled=true`) |
+| `platform` | http://localhost:8081 | thread pool (`platform` profile, 200 Tomcat OS threads) |
+
+Both use the same image. Set `DEMO_DB_LATENCY=4s docker compose up -d` to slow down the DB wait. Compare them with k6:
+
+```bash
+BASE_URL=http://localhost:8081 k6 run k6-load-test.js   # platform: avg 2.62 s, max 4.29 s
+BASE_URL=http://localhost:8080 k6 run k6-load-test.js   # virtual:  avg 1.00 s, max 1.01 s
+```
+
+The image is a multi-stage build (JDK 25 for the build, JRE 25 at runtime), runs as a non-root user and splits the jar into Spring Boot layers so a code change doesn't re-ship the dependencies.
+
+Stop everything with `docker compose down`.
+
 ## Web UI
 
 Open **http://localhost:8080** and press **▶ Run both**. The page recreates the diagram with live data from the server: both strategies run side by side, and every box (= 10 requests) turns red (waiting), green (running) or pale green (done) as progress streams in over Server-Sent Events.
