@@ -17,12 +17,23 @@ A runnable version of this diagram: a Spring Boot API where every request waits 
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=platform     # thread pool (old way): 200 Tomcat OS threads
 ```
 
+## Web UI
+
+Open **http://localhost:8080** and press **▶ Run both**. The page recreates the diagram with live data from the server: both strategies run side by side, and every box (= 10 requests) turns red (waiting), green (running) or pale green (done) as progress streams in over Server-Sent Events.
+
+| While running | Finished |
+|---|---|
+| ![Web UI while running](img/web-ui-running.png) | ![Web UI finished](img/web-ui-done.png) |
+
+Add `?run` to the URL to start a run on page load. Start the app with `--demo.db.latency=4s` to slow it down for a presentation.
+
 ## Endpoints
 
 | Endpoint | What it does |
 |---|---|
 | `GET /api/users/{id}` | One request = one simulated ~1 s DB call. Response shows which thread served it. |
 | `GET /api/compare?requests=1000&poolSize=200` | Runs the diagram's scenario in-process: fixed pool of 200 OS threads vs `Executors.newVirtualThreadPerTaskExecutor()`. |
+| `GET /api/compare/live?requests=1000&poolSize=200` | Runs both strategies side by side and streams `progress` events (waiting/running/done every 100 ms) and a final `result` event. Used by the web UI. |
 | `GET /api/stats` | Whether virtual threads are on, the current thread, and how many DB calls are in flight. |
 
 The DB latency is configurable with `demo.db.latency` (default `1s`).
