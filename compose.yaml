@@ -1,0 +1,32 @@
+# Run both modes side by side:
+#   virtual  -> http://localhost:8080  (spring.threads.virtual.enabled=true)
+#   platform -> http://localhost:8081  (classic Tomcat pool of 200 OS threads)
+x-app: &app
+  build: .
+  image: spring-boot-thread-pool-vs-virtual-thread:latest
+  healthcheck:
+    # The JRE image has no curl, so speak HTTP through bash's /dev/tcp
+    test: [ "CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3" ]
+    interval: 10s
+    timeout: 3s
+    retries: 5
+    start_period: 20s
+  restart: unless-stopped
+
+services:
+  virtual:
+    <<: *app
+    container_name: vt-virtual
+    ports:
+      - "8080:8080"
+    environment:
+      DEMO_DB_LATENCY: ${DEMO_DB_LATENCY:-1s}
+
+  platform:
+    <<: *app
+    container_name: vt-platform
+    ports:
+      - "8081:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: platform
+      DEMO_DB_LATENCY: ${DEMO_DB_LATENCY:-1s}
