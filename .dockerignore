@@ -1,0 +1,9 @@
+target/
+.git/
+.github/
+.idea/
+*.iml
+.DS_Store
+img/
+*.jpeg
+k6-*.js
