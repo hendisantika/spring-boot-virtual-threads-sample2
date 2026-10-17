@@ -4,6 +4,8 @@ import id.s.hendisantika.vt.repository.SlowUserRepository;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,5 +53,23 @@ class ThreadComparisonServiceTest {
 
         assertThat(result.dbLatencyMillis()).isEqualTo(LATENCY_MILLIS);
         assertThat(result.speedup()).isGreaterThan(2.0);
+    }
+
+    @Test
+    void compareLiveStreamsProgressUntilBothRunsFinish() {
+        List<LiveSnapshot> snapshots = new CopyOnWriteArrayList<>();
+
+        ComparisonResult result = service.compareLive(REQUESTS, POOL_SIZE, snapshots::add);
+
+        assertThat(snapshots).hasSizeGreaterThan(2);
+        LiveSnapshot last = snapshots.getLast();
+        assertThat(last.threadPool().finished()).isTrue();
+        assertThat(last.threadPool().done()).isEqualTo(REQUESTS);
+        assertThat(last.virtualThreads().finished()).isTrue();
+        assertThat(last.virtualThreads().done()).isEqualTo(REQUESTS);
+        assertThat(snapshots).anySatisfy(snapshot ->
+                assertThat(snapshot.threadPool().waiting()).isGreaterThan(0));
+        assertThat(result.virtualThreads().peakConcurrent()).isEqualTo(REQUESTS);
+        assertThat(result.threadPool().peakConcurrent()).isEqualTo(POOL_SIZE);
     }
 }
