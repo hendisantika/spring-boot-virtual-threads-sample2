@@ -10,6 +10,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
+ * Created by IntelliJ IDEA.
+ * Project : spring-boot-thread-pool-vs-virtual-thread
+ * User: hendisantika
+ * Email: hendisantika@gmail.com
+ * Telegram : @hendisantika34
+ * Date: 17/10/26
+ * Time: 14.40
+ */
+/**
  * Pretends to be a database: every query blocks the calling thread for {@code demo.db.latency}.
  * <p>
  * On a platform thread the OS thread sits idle during the wait. On a virtual thread the
